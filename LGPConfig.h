@@ -2,47 +2,141 @@
 #define LGP_CONFIG_H
 
 #include <cstdint>
-// THESE ARE ALL COMPILE TIME COMMANDS
+#include <array>
 
-namespace LGPConfig{
-    // LOG 2 to calculate bits needed 
-    constexpr int log2(int n){
-        return (n<=1) ? 0: 1 + log2(n/2);
+// =============================================================================
+// LGPConfig: Compile-time configuration for the LGP system.
+//
+// All values here are `constexpr` -- they are baked into the binary at compile
+// time. Changing any of these values requires a rebuild, but in exchange the
+// compiler can use them for sizing, masking, and loop unrolling, and the CPU
+// pays no runtime cost to read them.
+//
+// This file is intentionally parameter-only: it answers "how big is the
+// population?", "how many registers?", "which constants can programs use?".
+// The bit layout that turns these parameters into an instruction encoding
+// lives in ISA.h.
+// =============================================================================
+
+namespace LGPConfig {
+
+    // -------------------------------------------------------------------------
+    // Utility: compile-time integer log2.
+    // Used to derive bit-widths from pool sizes (e.g. 8 registers -> 3 bits).
+    // Recursive because C++14 constexpr functions can't use loops portably;
+    // by C++17 we could rewrite as a loop, but this is fine and runs at
+    // compile time only.
+    // -------------------------------------------------------------------------
+    constexpr int log2(int n) {
+        return (n <= 1) ? 0 : 1 + log2(n / 2);
     }
-    constexpr int MAX_GENERATIONS = 100;
-    constexpr int NUM_PROGRAMS = 100; 
 
-    // MEMORY LAYOUT - We are storing all programs as a list of uint_32 instructions (just one big list of instructions, programs seperated by indices)  
-    constexpr int MAX_PROGRAM_SIZE = 16; // Max num instructs prog can have 
-    constexpr int POPULATION_SIZE = 2;
-    constexpr int TOTAL_INSTRUCTIONS = POPULATION_SIZE * MAX_PROGRAM_SIZE;
-    constexpr int STARTING_PROGRAM_SIZE = 8
+    // =========================================================================
+    // Evolutionary loop parameters
+    // =========================================================================
 
-    constexpr int NUM_CONSTANTS = 8; 
-    constexpr int CONSTANT_BITS = log2(NUM_CONSTANTS);
-    constexpr int CONSTANT_MASK = NUM_CONSTANTS - 1;
+    constexpr int MAX_GENERATIONS = 100;  // Outer loop cap on the evolutionary run.
+
+    // =========================================================================
+    // Population and program sizing
+    //
+    // Memory layout: all programs are stored as one flat uint32_t buffer of
+    // length TOTAL_INSTRUCTIONS. Program i occupies the slice
+    //   [i * MAX_PROGRAM_SIZE, i * MAX_PROGRAM_SIZE + program_lengths[i])
+    // Slots past program_lengths[i] exist but are not executed by the
+    // interpreter. This "program-major" layout is warp-friendly: on the GPU,
+    // one warp evaluating one program reads its instruction stream
+    // contiguously.
+    // =========================================================================
+
+    constexpr int POPULATION_SIZE        = 2;    // Number of programs per generation.
+                                                 // Small for now while testing;
+                                                 // will be bumped up later.
+    constexpr int MAX_PROGRAM_SIZE       = 16;   // Hard cap on instructions per program.
+                                                 // All programs reserve this much
+                                                 // space; variable length is tracked
+                                                 // separately in program_lengths[].
+    constexpr int STARTING_PROGRAM_SIZE  = 8;    // Initial length of every program
+                                                 // at generation 0.
+    constexpr int TOTAL_INSTRUCTIONS     = POPULATION_SIZE * MAX_PROGRAM_SIZE;
+                                                 // Total slots in the flat buffer.
+
+    // =========================================================================
+    // Register file
+    //
+    // Each program has its own set of scalar float registers. Register IDs
+    // are packed into the instruction word, so NUM_REGISTERS must be a power
+    // of 2 and must fit in the index field (currently 7 bits -> max 128).
+    // =========================================================================
+
+    constexpr int NUM_REGISTERS  = 8;                   // MUST be a power of 2.
+    constexpr int REGISTER_BITS  = log2(NUM_REGISTERS); // Bits needed to encode an ID.
+    constexpr int REGISTER_MASK  = NUM_REGISTERS - 1;   // AND-mask that clips any value
+                                                        // to a valid register index.
+                                                        // For NUM_REGISTERS=8 this is 0b111.
+
+    // =========================================================================
+    // Constant pool
+    //
+    // When an instruction's src2 field is flagged as "constant mode", its
+    // index selects into CONSTANTS[] instead of the register file. These are
+    // fixed at compile time -- programs cannot evolve new constants, only
+    // pick from this list.
+    // =========================================================================
+
+    constexpr int NUM_CONSTANTS  = 8;
+    constexpr int CONSTANT_BITS  = log2(NUM_CONSTANTS);
+    constexpr int CONSTANT_MASK  = NUM_CONSTANTS - 1;
+
     constexpr std::array<float, NUM_CONSTANTS> CONSTANTS = {
         0.0f, 1.0f, -1.0f, 3.14159f, 0.5f, 2.0f, 10.0f, 100.0f
     };
 
-    constexpr int NUM_REGISTERS = 8; // MUST BE A POWER OF 2! (max 2^7 )
-    constexpr int REGISTER_BITS = log2(NUM_REGISTERS);
-    constexpr int REGISTER_MASK = NUM_REGISTERS - 1;
-    
-   constexpr int NUM_OPERATIONS = 8; // mAx 2^8 
-   constexpr int OPERATIONS_BITS = log2(NUM_OPERATIONS); // Num active bits cause we have max 8 bits for this but often we wont have 256 ops 
-   constexpr int OPERATION_MASK = NUM_OPERATIONS - 1;  // Mask based on num ops - for safety. Prevents us op vals that exceed our num of ops. 
-   // Ex we have 8 bits and lets say its 1111 1111-  256 ops available. lets say we only have 8  operatiosn we do a mask of the num 7 (111) when we and to be 0000 0111 
+    // The src2 index field in an instruction is 7 bits wide and is used for
+    // BOTH registers (when mode=0) and constants (when mode=1). Keeping the
+    // two pools equal-sized means one mask suffices for both cases. If you
+    // ever want asymmetric pools, this assumption breaks and the encoder/
+    // decoder need reworking -- the static_assert will catch it at compile
+    // time.
+    static_assert(NUM_REGISTERS == NUM_CONSTANTS,
+                  "src2 index field assumes NUM_REGISTERS == NUM_CONSTANTS");
 
-   // RATES 
-   constexpr float insert_end = 0.8f; 
-   constexpr float pop_swap = 0.75f;
-   constexpr float replace = 0.8f;
-   constexpr float micro = 0.8f; 
+    // =========================================================================
+    // Instruction set size
+    //
+    // The opcode occupies the low byte of the instruction word. Only
+    // OPERATIONS_BITS of that byte are meaningful; the rest must be masked.
+    // The concrete opcode enum lives in ISA.h (ADD, SUB, MUL, ...).
+    // =========================================================================
 
-   constexpr float crossover = 0.9f; 
-   constexpr float ELITES = 0.6f;
+    constexpr int NUM_OPERATIONS   = 8;                    // Max 2^8 = 256 if we used the whole byte.
+    constexpr int OPERATIONS_BITS  = log2(NUM_OPERATIONS); // Active bits in the opcode field.
+    constexpr int OPERATION_MASK   = NUM_OPERATIONS - 1;   // AND-mask that clips a random byte
+                                                           // to a valid opcode index.
+                                                           // Example: 8 ops -> mask = 0b0000_0111.
 
+    // =========================================================================
+    // Variation rates
+    //
+    // These control the probabilities applied during mutation and crossover.
+    // Names correspond to specific operators that will be implemented later;
+    // documenting semantics here as placeholders.
+    // =========================================================================
 
-}
-#endif
+    constexpr float INSERT_END = 0.8f;   // P(insert at end vs. random position) in macro-mutation.
+    constexpr float POP_SWAP   = 0.75f;  // P(swap operands) micro-mutation rate.
+    constexpr float REPLACE    = 0.8f;   // P(replace instruction) macro-mutation rate.
+    constexpr float MICRO      = 0.8f;   // P(apply micro-mutation to a given instruction).
+
+    constexpr float CROSSOVER  = 0.9f;   // P(apply crossover) per offspring.
+    constexpr float ELITES     = 0.2f;   // Fraction of population preserved as elites.
+
+    // =========================================================================
+    // RNG
+    // =========================================================================
+
+    constexpr uint32_t SEED = 42;  // Fixed seed -> deterministic runs for testing.
+
+}  // namespace LGPConfig
+
+#endif  // LGP_CONFIG_H

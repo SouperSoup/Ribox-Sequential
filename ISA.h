@@ -12,25 +12,17 @@ namespace ISA {
 
     // OPERATIONS AVAILABLE 
     enum OpCode : uint8_t {
-        ADD = 0,
-        SUB = 1,
-        MUL = 2,
-        DIV = 3,
-        SIN = 4,
-        COS = 5,
-        LT = 6,
-        GT = 7,
-
-
-
-        OPCOUNT = NUM_OPERATIONS
-
-
+    ADD, SUB, MUL, DIV, SIN, COS, LT, GT,
+    OPCOUNT   // auto = 8
     };
+    static_assert(OPCOUNT == LGPConfig::NUM_OPERATIONS,
+                "OpCode enum and NUM_OPERATIONS are out of sync");
+
+
     // SPECIFIC MASK FOR THE SPLIT BYTE at the end- SRC 2 has the mode, 0 for reg and 1 for constant as its 7th bit 
     constexpr uint8_t MASK_MODE_BIT = 0x80; // Binary 1000 0000 /
     // The bottom 7 bits are the raw index
-    constexpr uint8_t MASK_RAW_INDEX = 0x7F; // Binary 0111 1111 (either the index of reg or constant)
+    constexpr int SRC2_INDEX_MASK = LGPConfig::REGISTER_MASK;  // == CONSTANT_MASK by assertion above
 
     // ENCODING AND DECODING FOR EASE OF USE 
     
@@ -53,8 +45,8 @@ namespace ISA {
         encoded_instruct |= raw_rand & (LGPConfig::REGISTER_MASK << DEST_SHIFT); // COMPACTING DEST
         encoded_instruct |= raw_rand & (LGPConfig::REGISTER_MASK << SRC1_SHIFT); // COmpacting SRC1
         // SRC 2 is special because we need to preserve the last bit because that is what we use for encoding the flag 
-        encoded_instruct |= raw_rand & (LGPConfig::REGISTER_MASK << SRC2_SHIFT); // this compacts the index part but will remove the flag bit 
-        encoded_instruct |= raw_rand & (MASK_MODE_BIT <<SRC2_SHIFT); /// now we added the flag back 
+        encoded_instruct |= raw_rand & (SRC2_INDEX_MASK << SRC2_SHIFT); // this compacts the index part but will remove the flag bit 
+        encoded_instruct |= raw_rand & (static_cast<uint32_t>(MASK_MODE_BIT)  <<SRC2_SHIFT); /// now we added the flag back 
         return encoded_instruct;
     }
 
@@ -65,7 +57,7 @@ namespace ISA {
         encoded_instruct |= (static_cast<uint32_t>(src1 & LGPConfig::REGISTER_MASK  )<< SRC1_SHIFT );
 
         // src 2 has 2 parts, 
-        encoded_instruct |= (static_cast<uint32_t>(src2 & LGPConfig::REGISTER_MASK  )<< SRC2_SHIFT ); // compacts tthe index partt
+        encoded_instruct |= (static_cast<uint32_t>(src2 & SRC2_INDEX_MASK  )<< SRC2_SHIFT ); // compacts tthe index partt
         encoded_instruct |= (static_cast<uint32_t>(src2 & MASK_MODE_BIT  )<< SRC2_SHIFT ); // adds flag
 
         return encoded_instruct;
@@ -84,10 +76,10 @@ namespace ISA {
     }
     // Handling source 2 
     inline uint8_t get_src2_index(uint32_t instruction){
-        return (instruction >> SRC2_SHIFT)& LGPConfig::REGISTER_MASK;
+        return (instruction >> SRC2_SHIFT)& SRC2_INDEX_MASK;
     }
     inline bool is_src2_constant(uint32_t instruction){
         return ((instruction >> SRC2_SHIFT)& MASK_MODE_BIT) != 0;
     }
 } // ISA namespace
-#endif // ISA 
+#endif // ISA A

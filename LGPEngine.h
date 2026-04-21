@@ -3,31 +3,45 @@
 #include "LGPConfig.h"
 #include <cstdint>
 #include <random>
+#include <vector>
+#include <limits>
 struct PopulationData{
-    uint32_t* instructions;
-    uint8_t* program_lengths; // assumes programs less then 255
-   
-    uint32_t* next_gen_instructions; // Write children here during variation
-    uint8_t* next_gen_lengths;       // Child lengths
+    std::vector<uint32_t> instructions;
+    std::vector<uint8_t> program_lengths; // assumes programs less then 255
+
+    std::vector<uint32_t> next_gen_instructions; // Write children here during variation
+    std::vector<uint8_t>next_gen_lengths;       // Child lengths
     
-    float* fitness_scores;
+    std::vector<float> fitness_scores;
+    PopulationData()
+        : instructions(LGPConfig::TOTAL_INSTRUCTIONS, 0),
+          program_lengths(LGPConfig::POPULATION_SIZE, LGPConfig::STARTING_PROGRAM_SIZE),
+          next_gen_instructions(LGPConfig::TOTAL_INSTRUCTIONS, 0),
+          next_gen_lengths(LGPConfig::POPULATION_SIZE, 0),
+          fitness_scores(LGPConfig::POPULATION_SIZE, std::numeric_limits<float>::quiet_NaN()); // any comparison with quiet NAn returns false
+    {}
 };
-class LGPEnvironment{
+class LGPEngine{
     private: 
-        PopulationData data;
+        
         int current_generation;
-        uint32_t* current_instructions; 
-        uint32_t* current_program_lengths;
+        int current_buffer; // flag for which instruct buffer 
 	    std::mt19937 rng; 
+        std::uniform_int_distribution<uint32_t> dist_32;
+        PopulationData data;
+
+
     public: 
-        LGPEnvironment();
-        ~LGPEnvironment();
-       	void init(uint_32_t seed);
-	void mutate();
+        LGPEngine();
+        ~LGPEngine();
+       	void init();
+	    void mutate();
         void crossover();
         int tournament_selection(); // returns the program index that is selected
         void vary();// crossover + mutation 
         void evolve(); // evolutionary loop 
+    private:
+    uint32_t generate_instruction();
 
 
 };
