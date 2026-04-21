@@ -5,48 +5,125 @@
 #include <random>
 #include <vector>
 #include <limits>
-struct PopulationData{
-    std::vector<uint32_t> instructions;
-    std::vector<uint8_t> program_lengths; // assumes programs less then 255
 
-    std::vector<uint32_t> next_gen_instructions; // Write children here during variation
-    std::vector<uint8_t>next_gen_lengths;       // Child lengths
-    
-    std::vector<float> fitness_scores;
+// =============================================================================
+// PopulationData: owns all the buffers that describe the population.
+//
+// This struct is deliberately just data + allocation -- it doesn't implement
+// any of the evolutionary loop. LGPEngine operates on it. Keeping the two
+// separate means (a) PopulationData can later be swapped for a GPU-backed
+// equivalent (same fields, but storage is cudaMalloc'd) without touching
+// engine logic, and (b) tests can construct a PopulationData in isolation.
+//
+// Memory layout recap (see LGPConfig.h for the "why"):
+//   - instructions[]:    flat buffer of TOTAL_INSTRUCTIONS uint32_t words.
+//                        Program i occupies the slice
+//                          [i * MAX_PROGRAM_SIZE, i * MAX_PROGRAM_SIZE + program_lengths[i])
+//                        Slots past program_lengths[i] exist but aren't
+//                        executed.
+//   - program_lengths[]: one byte per program; gates how far the interpreter
+//                        walks into that program's slice.
+//
+// Two parallel "next-gen" buffers implement ping-pong double-buffering for
+// variation: children are written into next_gen_* while the current
+// generation remains readable. After variation completes, the engine flips
+// a pointer/flag (current_buffer) to swap roles rather than copying. This
+// avoids allocation churn per generation and mirrors how the GPU version
+// will want to work.
+// =============================================================================
+
+// Container that contains population information
+struct PopulationData {
+
+    // ---- Current generation ------------------------------------------------
+    std::vector<uint32_t> instructions;      // Flat buffer of all programs'
+                                             // instructions; size = TOTAL_INSTRUCTIONS.
+    std::vector<uint8_t>  program_lengths;   // Active length of each program.
+                                             // uint8_t because MAX_PROGRAM_SIZE fits
+                                             // comfortably under 255.
+
+    // ---- Next generation (children go here during variation) ---------------
+    std::vector<uint32_t> next_gen_instructions;  // Write children here during variation.
+    std::vector<uint8_t>  next_gen_lengths;       // Child lengths.
+
+    // ---- Fitness ----------------------------------------------------------
+    std::vector<float>    fitness_scores;    // One per program; filled by the
+                                             // evaluator.
+
+    // -------------------------------------------------------------------------
+    // Default constructor sizes all buffers from the compile-time constants
+    // in LGPConfig, so the struct is always ready-to-use after construction.
+    // No manual resize() calls at the use site.
+    //
+    // Initialization values chosen deliberately:
+    //   - instructions / next_gen_instructions -> 0: zero-filled instruction
+    //     slots decode to a valid (if meaningless) instruction, so a missed
+    //     init() can't produce UB in the interpreter.
+    //   - program_lengths -> STARTING_PROGRAM_SIZE: same defensive reasoning.
+    //     A missed init() still leaves every program with a valid length.
+    //   - next_gen_lengths -> 0: children don't exist yet; variation fills
+    //     these in.
+    //   - fitness_scores -> NaN: sentinel for "not yet evaluated". Any
+    //     comparison with NaN returns false, so selection run on an
+    //     unevaluated population fails visibly rather than silently picking
+    //     the zero-fitness winners.
+    // -------------------------------------------------------------------------
     PopulationData()
-        : instructions(LGPConfig::TOTAL_INSTRUCTIONS, 0),
-          program_lengths(LGPConfig::POPULATION_SIZE, LGPConfig::STARTING_PROGRAM_SIZE),
+        : instructions         (LGPConfig::TOTAL_INSTRUCTIONS, 0),
+          program_lengths      (LGPConfig::POPULATION_SIZE,    LGPConfig::STARTING_PROGRAM_SIZE),
           next_gen_instructions(LGPConfig::TOTAL_INSTRUCTIONS, 0),
-          next_gen_lengths(LGPConfig::POPULATION_SIZE, 0),
-          fitness_scores(LGPConfig::POPULATION_SIZE, std::numeric_limits<float>::quiet_NaN()); // any comparison with quiet NAn returns false
+          next_gen_lengths     (LGPConfig::POPULATION_SIZE,    0),
+          fitness_scores       (LGPConfig::POPULATION_SIZE,
+                                std::numeric_limits<float>::quiet_NaN())
     {}
 };
-class LGPEngine{
-    private: 
-        
-        int current_generation;
-        int current_buffer; // flag for which instruct buffer 
-	    std::mt19937 rng; 
-        std::uniform_int_distribution<uint32_t> dist_32;
-        PopulationData data;
+
+// =============================================================================
+// LGPEngine: owns the evolutionary loop.
+//
+// Holds the population data, the RNG, and the generation counter, and
+// exposes the operators (init / mutate / crossover / select / vary / evolve)
+// that drive the loop. All randomness flows through the engine's single
+// mt19937 so that runs are reproducible given LGPConfig::SEED.
+// =============================================================================
+class LGPEngine {
+private:
+    // ---- Generation state --------------------------------------------------
+    int current_generation;                        // Counter; starts at 0 in ctor.
+    int current_buffer;                            // 0 or 1: indicates which of
+                                                   // the two buffers in PopulationData
+                                                   // is the "live" generation.
+                                                   // Flipped after each variation pass.
+
+    // ---- RNG ---------------------------------------------------------------
+    std::mt19937                              rng;      // Seeded with LGPConfig::SEED
+                                                        // in the constructor.
+    std::uniform_int_distribution<uint32_t>   dist_32;  // Uniform over the full
+                                                        // uint32_t range; used to
+                                                        // generate random instruction
+                                                        // words.
+
+    // ---- Population --------------------------------------------------------
+    PopulationData data;                           // All buffers; default-constructed.
+
+public:
+    LGPEngine();
+    ~LGPEngine() = default;
+
+    // ---- Public evolutionary interface -------------------------------------
+    void init();                  // Randomize the initial population.
+    void mutate();
+    void crossover();
+    int  tournament_selection();  // Returns the program index that is selected.
+    void vary();                  // Crossover + mutation over the whole population.
+    void evolve();                // Top-level evolutionary loop.
+
+    const PopulationData& get_data() const { return data; } // access data for testing 
 
 
-    public: 
-        LGPEngine();
-        ~LGPEngine();
-       	void init();
-	    void mutate();
-        void crossover();
-        int tournament_selection(); // returns the program index that is selected
-        void vary();// crossover + mutation 
-        void evolve(); // evolutionary loop 
-    private:
-    uint32_t generate_instruction();
-
-
+private:
+    // ---- Internal helpers --------------------------------------------------
+    uint32_t generate_instruction();  // One random, encoding-valid instruction word.
 };
 
-
-    
-
-#endif //LGP_ENGINE_H
+#endif  // LGP_ENGINE_H
