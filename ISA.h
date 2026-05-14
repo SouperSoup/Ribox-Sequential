@@ -2,6 +2,7 @@
 #define ISA_H
 #include <cstdint>
 #include "LGPConfig.h"
+#include <cmath>
 
 // =============================================================================
 // ISA: Instruction Set Architecture for the LGP system.
@@ -135,7 +136,7 @@ namespace ISA {
     // safe -- they get clipped to the valid range rather than corrupting
     // neighbouring fields.
     // -------------------------------------------------------------------------
-    inline uint32_t encode_manual(uint8_t op, uint8_t dest, uint8_t src1, uint8_t src2){
+    inline uint32_t encode_manual(uint8_t op, uint8_t dest, uint8_t src1, uint8_t src2, bool is_constant){
         uint32_t encoded_instruct = 0;
         encoded_instruct |= (static_cast<uint32_t>(op   & LGPConfig::OPERATION_MASK) << OP_SHIFT);
         encoded_instruct |= (static_cast<uint32_t>(dest & LGPConfig::REGISTER_MASK)  << DEST_SHIFT);
@@ -144,7 +145,11 @@ namespace ISA {
         // src2 is two parts: the 7-bit index and the 1-bit mode flag.
         // Same split as in encode_from_random, just with caller-supplied bits.
         encoded_instruct |= (static_cast<uint32_t>(src2 & SRC2_INDEX_MASK) << SRC2_SHIFT);
-        encoded_instruct |= (static_cast<uint32_t>(src2 & MASK_MODE_BIT)   << SRC2_SHIFT);
+       if (is_constant) {
+            encoded_instruct |= (static_cast<uint32_t>(MASK_MODE_BIT) << SRC2_SHIFT);
+        } // some bit shifting if its consta
+
+
 
         return encoded_instruct;
     }
@@ -183,6 +188,31 @@ namespace ISA {
         // Returns true if src2 should index into CONSTANTS[], false for
         // the register file.
         return ((instruction >> SRC2_SHIFT) & MASK_MODE_BIT) != 0;
+    }
+
+    // -------------------------------------------------------------------------
+    // apply_op: execute a single opcode on a pair of operand values.
+    // 
+    // For unary opcodes (SIN, COS), the first operand is ignored. The caller
+    // is responsible for fetching operands from registers/constants before
+    // calling this; this function is purely semantic.
+    //
+    // Inlined and header-resident so the compiler can specialize at every
+    // call site and (later) so the GPU and CPU interpreters share one
+    // canonical definition.
+    // -------------------------------------------------------------------------
+    inline float apply_op(uint8_t op, float a, float b) {
+        switch (op) {
+            case ADD: return a + b;
+            case SUB: return a - b;
+            case MUL: return a * b;
+            case DIV: return (b != 0.0f) ? a / b : 1.0f;   // protected division
+            case SIN: return std::sin(a);                  // unary: b ignored
+            case COS: return std::cos(a);                  // unary: b ignored
+            case LT:  return (a < b) ? 1.0f : 0.0f;
+            case GT:  return (a > b) ? 1.0f : 0.0f;
+            default:  return 0.0f;                          // unreachable
+        }
     }
 
 }  // namespace ISA
