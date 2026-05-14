@@ -147,7 +147,7 @@ namespace ISA {
         encoded_instruct |= (static_cast<uint32_t>(src2 & SRC2_INDEX_MASK) << SRC2_SHIFT);
        if (is_constant) {
             encoded_instruct |= (static_cast<uint32_t>(MASK_MODE_BIT) << SRC2_SHIFT);
-        } // some bit shifting if its consta
+        } // some bit shifting if its constant 0x80 is 1000 0000 - so shifts 1 to top meaning its a const
 
 
 
@@ -207,8 +207,8 @@ namespace ISA {
             case SUB: return a - b;
             case MUL: return a * b;
             case DIV: return (b != 0.0f) ? a / b : 1.0f;   // protected division
-            case SIN: return std::sin(a);                  // unary: b ignored
-            case COS: return std::cos(a);                  // unary: b ignored
+            case SIN: return std::sin(b);                  // unary: b ignored
+            case COS: return std::cos(b);                  // unary: b ignored
             case LT:  return (a < b) ? 1.0f : 0.0f;
             case GT:  return (a > b) ? 1.0f : 0.0f;
             default:  return 0.0f;                          // unreachable

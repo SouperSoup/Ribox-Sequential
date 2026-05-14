@@ -47,7 +47,7 @@ namespace Interpreter{
                 }
             }
             // actual execution of program
-            execute(instructions, instt_length, registers);
+            execute(instructions, inst_length, registers);
 
             // set the outputs 
 

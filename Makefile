@@ -4,7 +4,7 @@ CXXFLAGS := -std=c++20 -Wall -Wextra -Wpedantic -O2
 DEPFLAGS := -MMD -MP
 
 # ---- Files ----
-SRCS := LGPEngine.cpp test_bed.cpp
+SRCS := LGPEngine.cpp test_bed.cpp Interpreter.cpp
 OBJS := $(SRCS:.cpp=.o)
 DEPS := $(OBJS:.o=.d)
 TARGET := lgp_test

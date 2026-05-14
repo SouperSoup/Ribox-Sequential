@@ -1,5 +1,5 @@
-#ifndef INTERPETER_H
-#define INTERPETER_H
+#ifndef INTERPRETER_H
+#define INTERPRETER_H
 #include "LGPConfig.h"
 #include <cstdint>
 

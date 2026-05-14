@@ -1,4 +1,5 @@
-test_bed.o: test_bed.cpp LGPEngine.h LGPConfig.h ISA.h
+test_bed.o: test_bed.cpp LGPEngine.h LGPConfig.h ISA.h Interpreter.h
 LGPEngine.h:
 LGPConfig.h:
 ISA.h:
+Interpreter.h:
