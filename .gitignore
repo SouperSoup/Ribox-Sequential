@@ -1,0 +1,7 @@
+# Build artifacts
+*.o
+*.d
+
+# Binaries
+lgp_run
+lgp_test

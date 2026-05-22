@@ -35,7 +35,7 @@ namespace LGPConfig {
     // Evolutionary loop parameters
     // =========================================================================
 
-    constexpr int MAX_GENERATIONS = 100;  // Outer loop cap on the evolutionary run.
+    constexpr int MAX_GENERATIONS = 1000;  // Outer loop cap on the evolutionary run.
 
     // =========================================================================
     // Population and program sizing
@@ -49,14 +49,15 @@ namespace LGPConfig {
     // contiguously.
     // =========================================================================
 
-    constexpr int POPULATION_SIZE = 32;    // Number of programs per generation. MUST BE MULTIPLE OF 2... 
+    constexpr int POPULATION_SIZE = 1000;    // Number of programs per generation. MUST BE MULTIPLE OF 2... 
     static_assert((POPULATION_SIZE%2) == 0, "POPULATION_SIZE must be mult of 2");
                                                  // Small for now while testing;
                                                  // will be bumped up later.
-    constexpr int MAX_PROGRAM_SIZE = 16;   // Hard cap on instructions per program. MAX MAX FOR NOW IS 255 because using uint8 att some places
+    constexpr int MAX_PROGRAM_SIZE = 100;   // Hard cap on instructions per program. MAX MAX FOR NOW IS 255 because using uint8 att some places
                                                  // All programs reserve this much
                                                  // space; variable length is tracked
                                                  // separately in program_lengths[].
+    constexpr int SIZE_SENTINEL = 255; // max size for uint8 acts as a flag for invalid length 
     constexpr int STARTING_PROGRAM_SIZE = 8;    // Initial length of every program
                                                  // at generation 0.
     constexpr int TOTAL_INSTRUCTIONS = POPULATION_SIZE * MAX_PROGRAM_SIZE;
@@ -147,7 +148,7 @@ namespace LGPConfig {
 
     constexpr uint32_t SEED = 42;  // Fixed seed -> deterministic runs for testing.
 
-    constexpr uint32_t NUM_CONTEXTS = 32; // number of contexts / environments...
+    constexpr int NUM_CONTEXTS = 32; // number of contexts / environments...
 
 }  // namespace LGPConfig
 

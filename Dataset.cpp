@@ -6,6 +6,7 @@ namespace SRTargets{
     // simple sr functions 
     float quadratic(float x ){return x*x + x;}
     float koza1(float x){return x*x*x*x + x*x*x +x*x +x;}
+    float identity(float x) {return x;} 
 }
 Dataset make_sr_dataset_1d(int N, float xmin, float xmax,float (*target_fn)(float), uint32_t seed){
     Dataset d;

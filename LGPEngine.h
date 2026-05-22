@@ -7,6 +7,8 @@
 #include <limits>
 #include "Evaluator.h"
 #include "Dataset.h"
+#include "GenerationStats.h"
+
 
 // =============================================================================
 // PopulationData: owns all the buffers that describe the population.
@@ -43,7 +45,7 @@ struct PopulationData {
     std::vector<uint8_t>  program_lengths_buf[2];   // Active length of each program.
                                              // uint8_t because MAX_PROGRAM_SIZE fits
                                              // comfortably under 255.
-    static_assert(LGPConfig::MAX_PROGRAM_SIZE <= 255, "MAX PROGRAM SIZE LARGER THEN uint8 can store");
+    static_assert(LGPConfig::MAX_PROGRAM_SIZE <= LGPConfig::SIZE_SENTINEL, "MAX PROGRAM SIZE LARGER THEN uint8 can store");
     std::vector<float>fitness_scores_buf[2];
 
     // -------------------------------------------------------------------------
@@ -66,7 +68,7 @@ struct PopulationData {
     PopulationData(){
         for (int b =0; b <2; ++b){
             instructions_buf[b].assign(LGPConfig::TOTAL_INSTRUCTIONS, 0);
-            program_lengths_buf[b].assign(LGPConfig::POPULATION_SIZE, 255);// invalid sentinel is 255 ( largest val we can read in uint8 )
+            program_lengths_buf[b].assign(LGPConfig::POPULATION_SIZE, LGPConfig::SIZE_SENTINEL);// invalid sentinel is 255 ( largest val we can read in uint8 )
             fitness_scores_buf[b].assign(LGPConfig::POPULATION_SIZE, std::numeric_limits<float>::quiet_NaN());
         }
     }
@@ -106,6 +108,7 @@ private:
 
     // ---- Population --------------------------------------------------------
     PopulationData data;                           // All buffers; default-constructed.
+    std::vector<GenerationStats> history;
 
 
 public:
@@ -113,8 +116,8 @@ public:
     LGPEngine();
     ~LGPEngine() = default;
     ProgramView view_program(int i) const; // returns a program view object ( cur instruction part and cur length)
-    void evaluate_all(const Dataset& dataset); // evluates entire population... this loop will disappear on GPU - be assigned to diff warps 
-
+    void evaluate_all_sr(const Dataset& dataset); // evluates entire population... this loop will disappear on GPU - be assigned to diff warps 
+    void evaluate_all_rl();
     // ---- Public evolutionary interface -------------------------------------
     void init_population();                  // Randomize the initial population.
     void mutate(uint32_t* program, uint8_t& length);
@@ -123,7 +126,11 @@ public:
                           uint32_t* child_b, uint8_t& child_b_len);
     int  tournament_selection();  // Returns the program index that is selected.
     void vary();                  // Crossover + mutation over the whole population.
-    void evolve();                // Top-level evolutionary loop.
+    void evolve_sr(const Dataset& dataset); 
+    
+    // TO DO // Top-level evolutionary loop.
+    void evolve_rl();
+
 
     const PopulationData& get_data() const { return data; } // access data for testing 
     PopulationData& get_mutable_data() { return data; } // access data for testing 
@@ -132,6 +139,10 @@ public:
     void vary_pair(int dstA, int dstB);
     
     int current_buffer_index() const { return current_buffer; }
+    void init_evolution();
+    void print_history() const;
+    void print_best_program() const;
+    
     
 
 
@@ -179,7 +190,11 @@ private:
 
     void copy_elite_to_next(int srcIdx, int dstIdx); //given idx from source program from cur gen, copy that program to next gen at a the dstIndex - for elites... we copy fitness too!
     
+    void reset_buffers_to_sentinels();
+    GenerationStats compute_stats() const;
+
 };
+
 namespace Fitness {
     float mse_to_fitness(float mse);
 }

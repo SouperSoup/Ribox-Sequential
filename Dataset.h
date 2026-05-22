@@ -33,6 +33,7 @@ struct Dataset {
 namespace SRTargets {
     float quadratic(float x); // x^2 + x 
     float koza1(float x); // x^4 + x^3 + x^2 + x 
+    float identity(float x); //f(x) = x;
 
 }
 // build a dataset by sampling unifromaly from [x_min, x_max] for a single inpout target fn- determinist function used from config 

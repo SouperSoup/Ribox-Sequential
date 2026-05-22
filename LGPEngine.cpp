@@ -9,7 +9,17 @@
 #include <cstring>
 #include <algorithm>
 #include <numeric>
+#include "GenerationStats.h"
+void LGPEngine::init_evolution(){
+    current_buffer = 0;
+    current_generation = 0;
+    init_population();
+    // history 
+    history.clear();
+    history.reserve(LGPConfig::MAX_GENERATIONS);
+}
 void LGPEngine::init_population(){
+    reset_buffers_to_sentinels();
     // sets all instructions for all programs
     for (int i = 0; i < LGPConfig::TOTAL_INSTRUCTIONS; i ++){
         cur_instructions_mutable()[i] = generate_instruction();
@@ -48,7 +58,7 @@ ProgramView LGPEngine::view_program(int i) const{
         static_cast<int>(cur_lengths()[i]) // explicitly casting to int (widening from uint 8)
     };
 }
-void LGPEngine::evaluate_all(const Dataset& dataset){
+void LGPEngine::evaluate_all_sr(const Dataset& dataset){
     for (int agent = 0; agent < LGPConfig::POPULATION_SIZE; ++agent){
         if(std::isnan(cur_fitness()[agent])){
             const ProgramView prog = view_program(agent);
@@ -253,4 +263,76 @@ void LGPEngine::vary(){
         vary_pair(children, children +1); // passing in destination indices 
     }
     flip_generation();
+}
+void LGPEngine::reset_buffers_to_sentinels() {
+    for (int b = 0; b < 2; ++b) {
+        std::fill(data.fitness_scores_buf[b].begin(),
+                  data.fitness_scores_buf[b].end(),
+                  std::numeric_limits<float>::quiet_NaN());
+        std::fill(data.program_lengths_buf[b].begin(),
+                  data.program_lengths_buf[b].end(),
+                  static_cast<uint8_t>(LGPConfig::SIZE_SENTINEL));
+    }
+}
+GenerationStats LGPEngine::compute_stats() const {
+    const auto& fit = cur_fitness();
+    const auto& len = cur_lengths();
+
+    float best = -1.0f;
+    float sum = 0.0f;
+    int len_sum = 0;
+    int best_idx = 0;
+    for (int i = 0; i < LGPConfig::POPULATION_SIZE; ++i) {
+        len_sum += static_cast<int>(len[i]);
+        sum += fit[i];
+        if (fit[i] > best) {
+            best = fit[i];
+            best_idx = i;
+        }
+    }
+
+    return GenerationStats{
+        current_generation,
+        best,
+        sum / LGPConfig::POPULATION_SIZE,
+        static_cast<int>(len[best_idx]),
+        len_sum/LGPConfig::POPULATION_SIZE,
+        best_idx
+    };
+}
+void LGPEngine::evolve_sr(const Dataset& dataset){
+    init_evolution(); // set programs to random instructs, resets all buff and gen counts
+
+    evaluate_all_sr(dataset);
+    history.push_back(compute_stats());
+
+    for (int gen = 1; gen < LGPConfig::MAX_GENERATIONS; ++gen){
+        current_generation = gen;
+        vary();
+        evaluate_all_sr(dataset);
+        history.push_back(compute_stats());
+    }
+}
+void LGPEngine::print_history() const {
+    std::cout << "gen,best,mean,best_len\n";
+    for (const auto& s : history) {
+        std::cout << s.generation << ","
+                  << s.best_fitness << ","
+                  << s.mean_fitness << ","
+                  << s.best_length << "," 
+                  <<s.mean_length <<"\n";
+    }
+}
+void LGPEngine::print_best_program() const {
+    const GenerationStats& last = history.back();
+    const uint32_t* prog = cur_instructions().data()
+                         + last.best_index * LGPConfig::MAX_PROGRAM_SIZE;
+    std::cout << "Best program (fitness " << last.best_fitness
+              << ", length " << last.best_length << "):\n";
+    for (int i = 0; i < last.best_length; ++i) {
+        // reuse your print_instruction from test_bed, or inline a decode
+        std::cout << "  [" << i << "] op=" << (int)ISA::get_op(prog[i])
+                  << " dest=r" << (int)ISA::get_dest_index(prog[i])
+                  << " ...\n";
+    }
 }
