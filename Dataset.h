@@ -57,6 +57,6 @@ namespace Nguyen{
 }
 // build a dataset by sampling unifromaly from [x_min, x_max] for a single inpout target fn- determinist function used from config 
 Dataset make_sr_dataset_1d(int N, float xmin, float xmax, float (*target_fn)(float),uint32_t seed);
-
+Dataset load_csv_1d(const std::string& path);
 void write_csv(const Dataset& d, const std::string& path);
 #endif

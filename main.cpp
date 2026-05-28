@@ -1,43 +1,85 @@
+// main.cpp — Phase 2 driver: runs ONE sweep cell (one target, one seed).
+//
+// usage: ./lgp_run <train_csv> <test_csv> <target_name> <run_seed> <results_csv> <program_txt>
+//
+// Writes:
+//   <results_csv> : appends one numeric row (target,tool,run_seed,train_r2,test_r2,best_length)
+//   <program_txt> : the best program, human-readable, with a self-describing header
+//
+// One job = one invocation. Concatenate all <results_csv> files afterward
+// and prepend the header once. Each file is one row, no header.
 #include "LGPEngine.h"
 #include "Dataset.h"
-#include "LGPConfig.h"
+#include <fstream>
 #include <iostream>
+#include <string>
+#include <filesystem>
 
-// Identity target f(x) = x -- the trivial sanity problem. A 0-instruction
-// program already solves it (r0 starts as the input), so evolution should
-// drive best fitness to ~1.0 almost immediately. If it doesn't, the loop
-// is broken, not the problem.
-static float identity(float x) { return x; }
-
-int main() {
-    std::cout << "=== LGP evolution run ===\n";
-    std::cout << "POPULATION_SIZE   = " << LGPConfig::POPULATION_SIZE   << "\n";
-    std::cout << "MAX_GENERATIONS   = " << LGPConfig::MAX_GENERATIONS   << "\n";
-    std::cout << "ELITE_COUNT       = " << LGPConfig::ELITE_COUNT       << "\n";
-    std::cout << "MAX_PROGRAM_SIZE  = " << LGPConfig::MAX_PROGRAM_SIZE  << "\n\n";
-
-    // --- Sanity problem: f(x) = x -----------------------------------------
-    {
-        std::cout << "--- f(x) = x (sanity) ---\n";
-        Dataset d = make_sr_dataset_1d(64, -2.0f, 2.0f, identity,42);
-        LGPEngine engine;
-        engine.evolve_sr(d);
-        engine.print_history();
-        std::cout << "\n";
-        engine.print_best_program();
-        std::cout << "\n";
+int main(int argc, char** argv) {
+    if (argc != 7) {
+        std::cerr << "usage: " << argv[0]
+                  << " <train_csv> <test_csv> <target_name>"
+                     " <run_seed> <results_csv> <program_txt>\n";
+        return 1;
     }
 
-    // --- Real problem: f(x) = x*x + x -------------------------------------
-    {
-        std::cout << "--- f(x) = x*x + x (quadratic) ---\n";
-        Dataset d = make_sr_dataset_1d(64, -2.0f, 2.0f, SRTargets::koza3, 42);
-        LGPEngine engine;
-        engine.evolve_sr(d);
-        engine.print_history();
-        std::cout << "\n";
-        engine.print_best_program(); 
+    const std::string train_path  = argv[1];
+    const std::string test_path   = argv[2];
+    const std::string target_name = argv[3];
+    const uint32_t    run_seed    = static_cast<uint32_t>(std::stoul(argv[4]));
+    const std::string results_csv = argv[5];
+    const std::string program_txt = argv[6];
+
+    // Load the shared, fixed datasets. load_csv_1d throws on missing file,
+    // so a bad path fails loudly rather than producing an empty dataset.
+    Dataset train, test;
+    try {
+        train = load_csv_1d(train_path);
+        test  = load_csv_1d(test_path);
+    } catch (const std::exception& e) {
+        std::cerr << "[" << target_name << " seed " << run_seed
+                  << "] dataset load failed: " << e.what() << "\n";
+        return 1;
     }
 
+    // Run one evolutionary search with this cell's seed. Fresh engine =
+    // fully clean state; the seed is the only thing that varies across cells.
+    LGPEngine engine(run_seed);
+    engine.evolve_sr(train);
+
+    const float train_r2 = engine.best_train_r2();      // floored at 0 (it's fitness)
+    const float test_r2  = engine.best_test_r2(test);   // raw R^2, may be negative
+    const int   best_len = engine.best_length();
+
+    // Ensure output dirs exist (cluster jobs launch from arbitrary cwd, and
+    // ofstream will NOT create parent directories -- it just fails silently).
+    std::filesystem::path rp(results_csv), pp(program_txt);
+    if (rp.has_parent_path()) std::filesystem::create_directories(rp.parent_path());
+    if (pp.has_parent_path()) std::filesystem::create_directories(pp.parent_path());
+
+    // --- numeric result: one row, append mode, no header ---
+    {
+        std::ofstream f(results_csv, std::ios::app);
+        if (!f) { std::cerr << "cannot open " << results_csv << "\n"; return 1; }
+        f << target_name << ",lgp," << run_seed << ','
+          << train_r2 << ',' << test_r2 << ',' << best_len << '\n';
+    }
+
+    // --- best program: its own file, self-describing header ---
+    {
+        std::ofstream f(program_txt);
+        if (!f) { std::cerr << "cannot open " << program_txt << "\n"; return 1; }
+        f << "# target=" << target_name
+          << " seed="    << run_seed
+          << " train_r2="<< train_r2
+          << " test_r2=" << test_r2
+          << " length="  << best_len << "\n";
+        engine.print_best_program(f);   // requires the ostream& overload
+    }
+
+    // A line to stdout so the SLURM .out log confirms the cell ran.
+    std::cout << target_name << " seed " << run_seed
+              << " : train_r2=" << train_r2
+              << " test_r2="    << test_r2 << "\n";
     return 0;
 }

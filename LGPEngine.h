@@ -8,6 +8,8 @@
 #include "Evaluator.h"
 #include "Dataset.h"
 #include "GenerationStats.h"
+#include <ostream>
+#include <iostream>
 
 
 // =============================================================================
@@ -112,8 +114,7 @@ private:
 
 
 public:
-
-    LGPEngine();
+    explicit LGPEngine(uint32_t seed = LGPConfig::SEED);
     ~LGPEngine() = default;
     ProgramView view_program(int i) const; // returns a program view object ( cur instruction part and cur length)
     void evaluate_all_sr(const Dataset& dataset); // evluates entire population... this loop will disappear on GPU - be assigned to diff warps 
@@ -140,8 +141,9 @@ public:
     
     int current_buffer_index() const { return current_buffer; }
     void init_evolution();
+    void print_best_program(std::ostream& os = std::cout) const;
     void print_history() const;
-    void print_best_program() const;
+    // void print_best_program() const;
     
     
 
@@ -192,6 +194,10 @@ private:
     
     void reset_buffers_to_sentinels();
     GenerationStats compute_stats() const;
+    public:
+    float best_train_r2() const;
+    float best_test_r2(const Dataset& test) const;
+    int best_length() const;
 
 };
 

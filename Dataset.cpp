@@ -3,6 +3,8 @@
 #include "LGPConfig.h"
 #include <cmath>
 #include <fstream>
+#include <iomanip>   
+#include <stdexcept>
 
 namespace SRTargets{
     // simple sr functions 
@@ -31,6 +33,7 @@ namespace Nguyen{
 // than the one-pass Σy² - (Σy)²/N form, which suffers catastrophic
 // cancellation when the mean is large relative to the spread.
 static double compute_ss_tot(const std::vector<float>& targets, int N) {
+     if (N <= 0) return 0.0;   
     double mean = 0.0;
     for (int i = 0; i < N; ++i) mean += double(targets[i]);
     mean /= double(N);
@@ -68,9 +71,42 @@ Dataset make_sr_dataset_1d(int N, float xmin, float xmax,float (*target_fn)(floa
     return d; // return finished dataset x 
 }
 
+
 void write_csv(const Dataset& d, const std::string& path) {
     std::ofstream f(path);
+    f << std::setprecision(9);          // float has ~7 sig digits; 9 is lossless
     f << "x,y\n";
     for (int n = 0; n < d.N; ++n)
         f << d.inputs[n] << "," << d.targets[n] << "\n";
+
+}
+Dataset load_csv_1d(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) throw std::runtime_error("cannot open " + path);
+
+    std::string line;
+    std::getline(f, line);  // skip header "x,y"
+
+    std::vector<float> xs, ys;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        const auto comma = line.find(',');
+        if (comma == std::string::npos) continue;
+        xs.push_back(std::stof(line.substr(0, comma)));
+        ys.push_back(std::stof(line.substr(comma + 1)));
+    }
+
+    Dataset d;
+    d.N = static_cast<int>(xs.size());
+    d.num_inputs = 1;
+
+    const int padded = d.padded_N();
+    d.inputs.assign(padded * d.num_inputs, 0.0f);
+    d.targets.assign(padded, 0.0f);
+    for (int n = 0; n < d.N; ++n) {
+        d.inputs[n] = xs[n];
+        d.targets[n] = ys[n];
+    }
+    d.ss_tot = compute_ss_tot(d.targets, d.N);  // same helper as builder
+    return d;
 }

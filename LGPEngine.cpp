@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <numeric>
 #include "GenerationStats.h"
+#include <ostream>
 void LGPEngine::init_evolution(){
     current_buffer = 0;
     current_generation = 0;
@@ -38,10 +39,10 @@ uint32_t LGPEngine::generate_instruction(){
     return ISA::encode_from_random(raw_rand); // packs and cleans bits (lose some entropy)
 }
 // constructor- kept explicitly clean- inits current buffer to 0, sets gen to 0, sets up the seed, and distribution, verbose data init
-LGPEngine::LGPEngine()
+LGPEngine::LGPEngine(uint32_t seed)
     : current_generation(0),
     current_buffer(0), 
-    rng(LGPConfig::SEED), 
+    rng(seed), 
     dist_32(0,UINT32_MAX), dist_pop(0,LGPConfig::POPULATION_SIZE-1),
     dist_unit(0.0f, 1.0f),
     dist_field(0, 4),
@@ -302,7 +303,7 @@ GenerationStats LGPEngine::compute_stats() const {
         best,
         sum / LGPConfig::POPULATION_SIZE,
         static_cast<int>(len[best_idx]),
-        len_sum/LGPConfig::POPULATION_SIZE,
+        static_cast<float>(len_sum)/LGPConfig::POPULATION_SIZE,
         best_idx
     };
 }
@@ -314,9 +315,9 @@ void LGPEngine::evolve_sr(const Dataset& dataset){
 
     for (int gen = 1; gen < LGPConfig::MAX_GENERATIONS; ++gen){
         current_generation = gen;
-        vary();
-        evaluate_all_sr(dataset);
-        history.push_back(compute_stats());
+        vary(); // this does tthe flip 
+        evaluate_all_sr(dataset); // eval on cur gen 
+        history.push_back(compute_stats()); // based on cur gen - if something flips then reading from wrong buffer
     }
 }
 void LGPEngine::print_history() const {
@@ -346,12 +347,12 @@ static const char* op_symbol(uint8_t op) {
     }
 }
 
-void LGPEngine::print_best_program() const {
+void LGPEngine::print_best_program(std::ostream& os) const {
     const GenerationStats& last = history.back();
     const uint32_t* prog = cur_instructions().data()
                          + last.best_index * LGPConfig::MAX_PROGRAM_SIZE;
 
-    std::cout << "Best program (fitness " << last.best_fitness
+    os << "Best program (fitness " << last.best_fitness
               << ", length " << last.best_length << "):\n";
 
     for (int i = 0; i < last.best_length; ++i) {
@@ -362,22 +363,41 @@ void LGPEngine::print_best_program() const {
         const uint8_t  src2  = ISA::get_src2_index(instr);
         const bool     s2c   = ISA::is_src2_constant(instr);
 
-        std::cout << "  [" << i << "] r" << (int)dest << " = ";
+        os << "  [" << i << "] r" << (int)dest << " = ";
 
         if (op == ISA::SIN || op == ISA::COS) {
             // Unary: reads src2 (which may be a register or a constant),
             // ignores src1. Print the function form.
-            std::cout << op_symbol(op) << "(";
-            if (s2c) std::cout << LGPConfig::CONSTANTS[src2];
-            else     std::cout << "r" << (int)src2;
-            std::cout << ")";
+            os << op_symbol(op) << "(";
+            if (s2c) os << LGPConfig::CONSTANTS[src2];
+            else     os<< "r" << (int)src2;
+            os << ")";
         } else {
             // Binary: r[src1] <op> (r[src2] or CONSTANTS[src2])
-            std::cout << "r" << (int)src1 << " " << op_symbol(op) << " ";
-            if (s2c) std::cout << LGPConfig::CONSTANTS[src2];
-            else     std::cout << "r" << (int)src2;
+           os<< "r" << (int)src1 << " " << op_symbol(op) << " ";
+            if (s2c) os << LGPConfig::CONSTANTS[src2];
+            else     os << "r" << (int)src2;
         }
 
-        std::cout << "\n";
+        os << "\n";
     }
+}
+// Best program's R² on the training data it evolved against.
+// This is the stored fitness, which already went through r2_to_fitness
+// (floored at 0). So a sub-mean champion reads as 0 here.
+float LGPEngine::best_train_r2() const {
+    return history.back().best_fitness;
+}
+
+// Best program's RAW R² on a different (held-out) dataset.
+// Not floored -- a model that fits train but fails to generalize will
+// show negative here, which is the honest signal we want for the test column.
+float LGPEngine::best_test_r2(const Dataset& test) const {
+    const int idx = history.back().best_index;
+    const ProgramView prog = view_program(idx);
+    return Evaluator::evaluate_sr_r2(prog, test);
+}
+
+int LGPEngine::best_length() const {
+    return history.back().best_length;
 }
