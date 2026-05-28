@@ -198,6 +198,8 @@ private:
     float best_train_r2() const;
     float best_test_r2(const Dataset& test) const;
     int best_length() const;
+    const std::vector<GenerationStats>& history_view() const { return history; }
+
 
 };
 
