@@ -39,7 +39,7 @@ for target in targets:
             n_jobs=1,
             verbose=0,
             init_depth=(2, 6),
-            parsimony_pressure=0.01
+            parsimony_coefficient=0.01
         )
 
         # 5. Fit model
