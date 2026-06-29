@@ -211,7 +211,7 @@ Match d1's parameters wherever the concept exists in both systems. Where it
 doesn't (LGP-specific mutation operators), leave gplearn at its tree-GP
 defaults — do **not** invent values.
 
-| Parameter            | Set to                  | Source / reason                                   |
+| Parameter            | Value                  | Source / reason                                   |
 |----------------------|-------------------------|---------------------------------------------------|
 | Population size      | 1000                | matches d1 (`POPULATION_SIZE`)                    |
 | Generations          | 1000                | matches d1 (`MAX_GENERATIONS`)                    |
