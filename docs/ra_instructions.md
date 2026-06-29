@@ -215,7 +215,7 @@ defaults — do **not** invent values.
 |----------------------|-------------------------|---------------------------------------------------|
 | Population size      | 1000                | matches d1 (`POPULATION_SIZE`)                    |
 | Generations          | 1000                | matches d1 (`MAX_GENERATIONS`)                    |
-| Tournament size      | **3**                   | matches d1 (`TOURNAMENT_SIZE`)                    |
+| Tournament size      | 3                   | matches d1 (`TOURNAMENT_SIZE`)                    |
 | Function set         | `add, sub, mul, div, sin, cos | matches the d1 ISA ops these targets use   |
 | Fitness metric       | R²    | matches d1                                        |
 | Max program size     | 64 nodes | LGP length ≠ tree depth; not 1:1                  |
