@@ -213,14 +213,14 @@ defaults — do **not** invent values.
 
 | Parameter            | Set to                  | Source / reason                                   |
 |----------------------|-------------------------|---------------------------------------------------|
-| Population size      | **1000**                | matches d1 (`POPULATION_SIZE`)                    |
-| Generations          | **1000**                | matches d1 (`MAX_GENERATIONS`)                    |
+| Population size      | 1000                | matches d1 (`POPULATION_SIZE`)                    |
+| Generations          | 1000                | matches d1 (`MAX_GENERATIONS`)                    |
 | Tournament size      | **3**                   | matches d1 (`TOURNAMENT_SIZE`)                    |
-| Function set         | `add, sub, mul, div, sin, cos, gt, lt` | matches the d1 ISA ops these targets use   |
-| Fitness metric       | R² (reported at end)    | matches d1                                        |
-| Max program size     | see note (try ~50 nodes)| LGP length ≠ tree depth; not 1:1                  |
-| Elitism              | not directly settable   | see note — gplearn's regressor has no elitism knob|
-| Crossover / mutation rates | **gplearn defaults**  | LGP rates are operator-specific, no tree analogue |
+| Function set         | `add, sub, mul, div, sin, cos | matches the d1 ISA ops these targets use   |
+| Fitness metric       | R²    | matches d1                                        |
+| Max program size     | 64 nodes | LGP length ≠ tree depth; not 1:1                  |
+| Elitism              | cannot be set   | see note — gplearn's regressor has no elitism knob|
+| Crossover / mutation rates | gplearn defaults  | LGP rates are operator-specific, no tree analogue |
 
 Notes:
 - **Function set:** d1's ISA exposes `+ − × ÷ sin cos ` (it also has two
